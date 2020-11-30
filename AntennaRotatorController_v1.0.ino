@@ -13,17 +13,19 @@ const int clockwise_relay = 5;
 const int counterclockwise_relay = 6;
 const int run_relay =  13;
 
-int EE_addr1 = 0;
+int EE_addr1 = 1;
 int clockwise_flag = 0;
 int counterclockwise_flag = 0;
-
-long motor_position = 0;
-long motor_runtime_var = 0;
-long motor_runtime = 0;
-long motor_timer_check = 0;
-long TimeLastCheck = 0;
-long debounceDelay = 1000;
+double motor_position_var = 0;
+double motor_position = 0;
+double motor_runtime_var = 0;
+double motor_runtime = 0;
+double motor_timer_check = 0;
+double TimeLastCheck = 0;
+long debounceDelay = 500;
 int lastButtonPushed = 1;
+double motor_startposition = 0;
+double motor_timelaps = 0;
 
 long lastClockwiseDebounceTime = 0;  
 long lastCounterclockwiseDebounceTime = 0;  
@@ -35,6 +37,7 @@ int lastSetButtonState = HIGH;
 
 int menu_display = 1;//0-default display 
 int last_menu=0; //last displayed menu flag
+
 
 void setup()  {
        Serial.begin(9600);
@@ -49,6 +52,10 @@ void setup()  {
        digitalWrite(clockwise_relay, LOW); //make sure soft reset will turn off the relays
        digitalWrite(counterclockwise_relay, LOW);
        digitalWrite(run_relay, LOW);
+       scroll("DV7BJC",20,1);
+       lcd.begin(20, 4);
+       //motor_position = 45;
+      //EEPROM.put(EE_addr1, motor_position); 
 }
 
 void read_inputs() {
@@ -94,7 +101,7 @@ void read_inputs() {
 
 //main menu actions
 
-if(Set_buttonState==LOW && menu_display==1){
+if(Set_buttonState==LOW && (menu_display==2  || menu_display==3)){
   //tone( piezoPin, 2000, 250);
   lastButtonPushed=1;
  }else if(Clockwise_buttonState==LOW && menu_display==1){
@@ -112,16 +119,20 @@ if(Set_buttonState==LOW && menu_display==1){
  }else if(Set_buttonState==LOW && menu_display==3){
   //tone( piezoPin, 2000, 250);
   lastButtonPushed=5;
+ }else if(Set_buttonState==LOW && menu_display==1){
+  //tone( piezoPin, 2000, 250);
+  lastButtonPushed=6;
 }
 }
 
 void update_motor_position(){//update motor position
 
-  //EEPROM.get(EE_addr1,motor_position);
-  motor_position = 0;
+  EEPROM.get(EE_addr1,motor_position);
+  //motor_position = 0;
+  //lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print(" Rotator Controller ");
-  lcd.setCursor(0, 2);
+  lcd.setCursor(0, 1);
   lcd.print("    AZIMUTH : ");
   lcd.print(motor_position,1);
   lcd.setCursor(0, 3);
@@ -133,7 +144,7 @@ void main_menu() {
   
    switch (lastButtonPushed) {
     case 1:
-      //update_motor_position();
+      update_motor_position();
       menu_display = 1;
       last_menu = menu_display;
       break;
@@ -148,8 +159,9 @@ void main_menu() {
       
       menu_display = 2;
       last_menu = menu_display;
-      delay(150);
+      delay(1000);
       get_position();
+
       run_clockwise();
       
       break;
@@ -157,20 +169,35 @@ void main_menu() {
     case 3:
       
       lcd.setCursor(0, 0);
-      lcd.print(" RUN CLOCKWISE >>>>>");
+      lcd.print(" RUN COUNTERCLOCK <<<");
       lcd.setCursor(0, 1);
       lcd.print("    AZIMUTH : ");
       lcd.print(motor_position,1);
       
       menu_display = 3;
       last_menu = menu_display;
-      delay(150);
+      delay(1000);
       get_position();
+     
       run_counterclockwise();
       
       break;
     
-    
+    case 6:
+      
+      lcd.setCursor(0, 0);
+      lcd.print(" CALIBRATION MODE!  ");
+      motor_position = 0;
+      EEPROM.put(EE_addr1, motor_position); 
+      lcd.setCursor(0, 1);
+      lcd.print("    AZIMUTH : ");
+      lcd.print(motor_position,1);
+      
+      menu_display = 6;
+      last_menu = menu_display;
+      delay(3000);
+      lastButtonPushed = 1;      
+      break;
    }
       
   }  
@@ -181,6 +208,9 @@ void set_position() {
     Serial.println("Setting position");
     motor_runtime = (motor_runtime_var/6)*1000;
     TimeLastCheck = millis();
+    motor_timelaps = millis();
+    motor_startposition = motor_position;
+    motor_position_var = 0;
     //lcd.setCursor(0, 3);
     //lcd.print(" << Motor running >>");
     //tone( piezoPin, 1750, 150);
@@ -188,6 +218,9 @@ void set_position() {
     
 void manage_position() {
     motor_runtime -= ((millis() - TimeLastCheck));
+    TimeLastCheck = millis();
+    Serial.println("Runtime :");
+    Serial.println(motor_runtime);
     //if (floor(Sens1Time/1000) == 99) {
      //lcd.setCursor(0, 1);
      //lcd.print("    AZIMUTH : ");
@@ -197,32 +230,52 @@ void manage_position() {
      //lcd.print("    AZIMUTH : ");
       //}
     if (clockwise_flag == 1) {
-    motor_position += (motor_runtime/1000)*6;
-    lcd.setCursor(0, 2);
+    //motor_position_var = (((motor_runtime_var/6)*1000) - motor_runtime);
+    motor_position_var += ((millis() - motor_timelaps));
+    motor_timelaps = millis();
+
+    Serial.println(motor_position_var);
+    motor_position = (motor_startposition + ((motor_position_var/1000)*6)); 
+  
+    Serial.println("Position :");
+    Serial.println(motor_position);
+    lcd.setCursor(0, 1);
     lcd.print("    AZIMUTH : ");
     lcd.print(motor_position,1);
+    lcd.setCursor(0, 2);
+    lcd.print("  << CLOCKWISE >>   ");
+   
     }
     if (counterclockwise_flag == 1) {
-    motor_position -= (motor_runtime/1000)*6;
-    lcd.setCursor(0, 2);
+    motor_position_var += ((millis() - motor_timelaps));
+    motor_timelaps = millis();
+    Serial.println(motor_position_var);
+    motor_position = (motor_startposition - ((motor_position_var/1000)*6));
+    Serial.println("Position :");
+    Serial.println(motor_position);
+    lcd.setCursor(0, 1);
     lcd.print("    AZIMUTH : ");
     lcd.print(motor_position,1);
+    lcd.setCursor(0, 2);
+    lcd.print(" << COUNTERCLOCK >> ");
     }
-    TimeLastCheck = millis();
+    //TimeLastCheck = millis(); 
     lcd.setCursor(0, 3);
     lcd.print("SYSTEM RUNNING .....");
-    if (motor_position <= 0) {
-      stop_motor();
-      return;  
-    }
-    if (motor_position >= 360) {
-      stop_motor();
-      return;  
-    }
+    //if (motor_position <= 1) {
+      //stop_motor();
+      //return;  
+    //}
+    //if (motor_position >= 359) {
+      //stop_motor();
+      //return;  
+    //}
     if (motor_runtime <= 0) {
       stop_motor();
-      return;  
-    }
+     return; 
+     //delay (1000); 
+    
+     }
     
    
   }  
@@ -235,7 +288,7 @@ void scroll (String msg, int pos, int repeat) {
   lcd.clear();
   lcd.begin(20, 4);
   lcd.print(msg);
-  delay(50);
+  delay(250);
   // scroll 13 positions (string length) to the left
   // to move it offscreen left:
   for (int positionCounter = 0; positionCounter < pos; positionCounter++) {
@@ -243,7 +296,7 @@ void scroll (String msg, int pos, int repeat) {
     lcd.scrollDisplayLeft();
     // wait a bit:
     read_inputs();
-    delay(50);
+    delay(250);
   }
 
   // scroll 13 positions (string length + display length) to the right
@@ -253,11 +306,11 @@ void scroll (String msg, int pos, int repeat) {
     lcd.scrollDisplayRight();
     // wait a bit:
     read_inputs();
-    delay(50);
+    delay(250);
   }
  
   // delay at the end of the full loop:
-  delay(50);
+  delay(150);
   read_inputs();
  }
 }
@@ -295,23 +348,25 @@ void stop_motor(){
 }
 
 void get_position() {
-      
+      update_motor_position();
       lcd.setCursor(0, 2);
       lcd.print(" PUSH  SET to START!");
       lcd.setCursor(0, 3);
+      lcd.print("                    ");
+      lcd.setCursor(0, 3);
       lcd.print("Enter Position<>:");
       motor_runtime_var = 1;
-      lcd.print(motor_runtime_var);
+      lcd.print(motor_runtime_var,0);
       
-      delay(2000);
+      delay(1000);
       while (lastButtonPushed==2 || lastButtonPushed==3) {
         read_inputs();
         if (digitalRead(clockwise_button)== 0) {
-          delay(250);
+          delay(150);
           motor_runtime_var = motor_runtime_var+1;
         }
         if (digitalRead(counterclockwise_button)== 0) {
-          delay(250);
+          delay(150);
           motor_runtime_var = motor_runtime_var-1;
       }
       if (motor_runtime_var == 360) {
@@ -330,7 +385,7 @@ void get_position() {
         }
       lcd.setCursor(0, 3);   
       lcd.print("Enter Position<>:");
-      lcd.print(motor_runtime_var);       
+      lcd.print(motor_runtime_var,0);       
     }
     
     
@@ -341,6 +396,6 @@ void loop() {
    main_menu(); 
    while (lastButtonPushed == 0)  {
     manage_position(); 
-    read_inputs();
+    //read_inputs();
    }   
   }
